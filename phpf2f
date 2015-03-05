@@ -1,0 +1,325 @@
+#!/bin/bash
+# phpf2f - (php) (4) (to) php(5)
+
+#####################################################################################
+#                                                                                   #
+# FILE: phpf2f                                                                      #
+# DATE: 19/10/2007                                                                  #
+#                                                                                   #
+# AUTHOR: Mariano Fiorentino                                                        #
+#                                                                                   #
+# Copyright(C) 2007 Mariano Fiorentino                                              #
+# All rights reserved.                                                              #
+#                                                                                   #
+# This program is free software; you can redistribute it and/or modify              #
+# it under the terms of the GNU General Public License as published by              #
+# the Free Software Foundation; either version 2 of the License, or                 #
+# (at your option) any later version.                                               #
+#                                                                                   #
+# This program is distributed in the hope that it will be useful,                   #
+# but WITHOUT ANY WARRANTY; without even the implied warranty of                    #
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                     #
+# GNU General Public License for more details.                                      #
+#                                                                                   #
+# You should have received a copy of the GNU General Public License                 #
+# along with this program; if not, write to the Free Software                       #
+# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA         #
+#                                                                                   #
+#####################################################################################
+
+###################################################
+# TODO                                            #
+# - array_merge                                   #
+# - comparing objects                             #
+###################################################
+
+#------------ Start of Variables ------------#
+LOGFILE="";
+PHPCLI="php";
+PHPINI="php.ini";
+WORKDIR=""
+WORK_VER=52
+TRYONLY=0
+VERBOSE=0
+#------------ End of Variables   ------------#
+
+#------------ Start of Functions ------------#
+function testPath () {
+
+	if [ ! -e "$1" ]; then
+
+		echo "$1 is an invalid path for $2";
+		exit;
+	fi
+}
+# Print to file or on strout
+function displaylog () {
+	
+	if [ ! "X$LOGFILE" = "X" ]; then
+
+		echo $@ >> $LOGFILE;
+	else
+ 		echo $@;
+	fi
+}
+
+function displayAuthor () {
+	
+	echo "phpf2f"
+	echo ""
+	echo "Copyright (C) 2007 Mariano Fiorentino <mariano.fiorentino NOSPAMat gmail.com>";
+}
+#------------ End of Functions ------------#
+
+for ARG in $@; do
+
+	VALUE=`expr match $ARG '.*=\(.*\)'`;
+	PARAM=`expr match $ARG '\(--.*\)='`;
+
+	if [ -z $PARAM ]; then
+
+		PARAM="$ARG";
+	fi
+	
+	case "$PARAM" in
+	'--phpcli')
+
+		PHPCLI="$VALUE/$PHPCLI";
+		testPath $PHPCLI $PARAM;
+		;;
+	'--phpini')
+
+		PHPINI="$VALUE/$PHPINI";
+		testPath $PHPINI $PARAM;
+		;;
+	'--logfile')
+
+		if [ ! -z $VALUE ]; then
+
+			LOGFILE="$VALUE";
+			touch $LOGFILE;
+			testPath $LOGFILE $PARAM;
+		fi
+		;;
+	'--workdir')
+
+		if [ ! -z $VALUE ]; then
+
+			WORKDIR="$VALUE";
+		fi
+		testPath $WORKDIR $PARAM;
+		;;
+	'--tryonly')
+
+		TRYONLY=1;
+		;;
+	'--verbose')
+		VERBOSE=1;
+		;;
+	'--help')
+		displayAuthor;
+		echo "Usage: phpf2f --phpcli=/usr/bin --phpini=/etc --workdir=/var/www/htdocs [--tryonly] [--verbose] [--logfile=/path/to/log]";
+		exit;
+		;;
+	*)
+		echo "Unknow option $PARAM";
+		echo "try phpf2f --help";
+		exit;
+		;;
+	esac;
+done;
+# Testing php version
+if [ ! $WORK_VER -eq `$PHPCLI -v |grep '(cli)'| awk -F " " '{print $2}'|awk -F "." '{print $1$2}'` ]; then
+
+	echo "Version of phpcli must be of 5.2.x";
+	exit;
+fi
+# Testing php.ini file
+if [ ! `egrep '^[ ]*display_errors' $PHPINI|awk -F "[ ]*=[ ]*" '{print $2}'|tr A-Z a-z` = 'on' ]; then
+
+	echo "To work properly option 'display_errors' in php.ini file must set to on";
+	exit;
+fi
+
+if [ ! `egrep '^[ ]*display_startup_errors' $PHPINI|awk -F "[ ]*=[ ]*" '{print $2}'|tr A-Z a-z` = 'off' ]; then
+
+	echo "To work properly option 'display_startup_errors' in php.ini file must set to off";
+	exit;
+fi
+
+displayAuthor;
+echo "";
+echo "Path to php command line is: [$PHPCLI]";
+echo "Path to php.ini is: [$PHPINI]";
+echo "Logfile is: [$LOGFILE]";
+echo "Php work directory is: [$WORKDIR]";
+echo "ReadOnly: [$TRYONLY]";
+echo "Verbose: [$VERBOSE]";
+# TODO: accettare solo y/n
+read -n1 -p "Are you sure?[Y/n]" CONFIRM;
+
+if [ ! `echo $CONFIRM|tr A-Z a-z` = 'y' ]; then
+
+	echo "";
+        exit;
+fi
+
+echo -e "\n";
+displaylog "#####################################################################################";
+displaylog "Replaces \"var \$\" with \"public \$\"";
+displaylog "#####################################################################################";
+
+for FILE in $(egrep -rl '^class[ ]*[A-Za-z]*[ ]*' ${WORKDIR}); do
+
+	if [ $VERBOSE -eq 1 ]; then
+
+		displaylog $(egrep 'var \$' $FILE);
+	fi
+
+	if [ $TRYONLY -eq 0 ]; then
+
+		sed -i 's/var \$/public \$/' $FILE;
+	fi;
+	displaylog "PROCESSING $FILE";
+done;
+
+echo -e "\n";
+displaylog "#####################################################################################";
+displaylog "Replaces \"\$obj[] = \$this\" with \"\$obj[]=clone($this)\"";
+displaylog "#####################################################################################";
+
+for FILE in $(egrep -rl '\[\][ ]*=[ ]*\$this[ ]*;' ${WORKDIR});do
+	
+	if [ $VERBOSE -eq 1 ]; then
+
+		displaylog $(egrep '\[\][ ]*=[ ]*\$this[ ]*;' $FILE);
+	fi
+
+	if [ $TRYONLY -eq 0 ]; then
+	
+		sed -i 's/\[\][ ]*=[ ]*\$this[ ]*;/\[\]=clone(\$this);/' $FILE; 
+	fi;
+	displaylog "PROCESSING $FILE"; 
+done;
+
+echo -e "\n";
+displaylog "#####################################################################################";
+displaylog "Replaces \"array_push(\$obj, \$this)\" with \"array_push(\$obj, clone(\$this))\"";
+displaylog "#####################################################################################";
+
+for FILE in $(egrep -rl 'array_push[ ]*\([ ]*\$[A-Za-z]*[ ]*,[ ]*\$this[ ]*\)[ ]*;' ${WORKDIR});do
+
+	if [ $VERBOSE -eq 1 ]; then
+
+		displaylog $(egrep 'array_push[ ]*\([ ]*\$[A-Za-z]*[ ]*,[ ]*\$this[ ]*\)[ ]*;' $FILE);
+	fi
+
+	if [ $TRYONLY -eq 0 ]; then
+
+		sed -i '/array_push[ ]*([ ]*\$[A-Za-z]*[ ]*,[ ]*\$this/s/\$this/clone(\$this)/' $FILE;
+	fi;
+	displaylog "PROCESSING $FILE";
+done;
+
+echo -e "\n";
+displaylog "#####################################################################################";
+displaylog "Removes double declarations";
+displaylog "#####################################################################################";
+
+for FILE in $(egrep -rl '^class[ ]*[A-Za-z]*[ ]*' ${WORKDIR}); do
+
+ 	while true; do
+	
+		NUMBER=`$PHPCLI -c $PHPINI -l $FILE |grep 'Cannot redeclare[ ][A-Za-z]*::\$[A-Za-z]*' | awk -F "on line" '{ print $2 }'`;
+	
+		if [ ! -z $NUMBER ]; then
+
+			if [ $VERBOSE -eq 1 ]; then
+
+				displaylog $($PHPCLI -c $PHPINI -l $FILE);
+			fi
+			
+			displaylog "PROCESSING $FILE on line $NUMBER";
+
+			if [ $TRYONLY -eq 0 ]; then
+
+				sed -i "$NUMBER"d $FILE;
+			else
+				break;
+			fi;
+		else
+			break;
+		fi;
+        done;
+done;
+
+echo -e "\n";
+displaylog "#####################################################################################";
+displaylog "get_class & get_parent_class returns case sentitive string";
+displaylog "#####################################################################################";
+
+for FILE in $(egrep -rl '(get_[parent_]?class[ ]*\([ ]*\$[a-zA-Z]*[ ]*\)[ ]*[!=]?=[ ]*|[ ]*[!=]?=[ ]*get_[parent_]?class[ ]*\([ ]*\$[a-zA-Z]*[ ]*\))' ${WORKDIR}); do
+	
+	if [ $VERBOSE -eq 1 ]; then
+
+		displaylog $(egrep '(get_[parent_]?class[ ]*\([ ]*\$[a-zA-Z]*[ ]*\)[ ]*[!=]?=[ ]*|[ ]*[!=]?=[ ]*get_[parent_]?class[ ]*\([ ]*\$[a-zA-Z]*[ ]*\))' $FILE);
+	fi
+
+	if [ $TRYONLY -eq 0 ]; then
+
+		sed -i '/get_[parent_]?class[ ]*([ ]*\$[a-zA-Z]*[ ]*)[ ]*[=!]?=[ ]*/s/get_[parent_]?class[ ]*([ ]*\$[a-zA-Z]*[ ]*)/strtolower(&)/' $FILE;
+		sed -i '/[=!]?=[ ]*get_[parent_]?class[ ]*([ ]*\$[a-zA-Z]*[ ]*)/s/get_[parent_]?class[ ]*([ ]*\$[a-zA-Z]*[ ]*)/strtolower(&)/' $FILE;
+	fi;
+	displaylog "PROCESSING $FILE";
+done;
+
+echo -e "\n";
+displaylog "#####################################################################################";
+displaylog "Removes patterns like <?=//\$string?>";
+displaylog "#####################################################################################";
+
+for FILE in $(egrep -rl '<\?[=]*//\$.*\?>' ${WORKDIR}); do
+
+	if [ $VERBOSE -eq 1 ]; then
+
+		displaylog $(egrep '<\?[=]*//\$.*\?>' $FILE);
+	fi
+
+	if [ $TRYONLY -eq 0 ]; then
+
+		sed -i 's/<?[=]*\/\/\$.*?>//' $FILE;
+	fi;
+	displaylog "PROCESSING $FILE";
+done;
+
+echo -e "\n";
+displaylog "#####################################################################################";
+displaylog "Now only variables should be assigned by reference";
+displaylog "#####################################################################################";
+
+for FILE in $(egrep -rl '=[ ]*\&[ ]* new[ ]*' .); do
+
+	if [ $VERBOSE -eq 1 ]; then
+
+		displaylog $(egrep '=[ ]*\&[ ]* new[ ]*' $FILE);
+	fi
+
+	if [ $TRYONLY -eq 0 ]; then
+
+		sed -i 's/=[ ]*\&[ ]* new[ ]*/= new /g' $FILE;
+	fi;
+	displaylog "PROCESSING $FILE";
+done;
+
+echo -e "\n";
+displaylog "#####################################################################################";
+displaylog "Search for parser error";
+displaylog "#####################################################################################";
+
+for FILE in $(egrep -rl '<\?' .|egrep '.*php$'); do 
+
+	STRING=`$PHPCLI -c $PHPINI -l $FILE|grep "on line"`; 
+	displaylog ${STRING};
+done;
+
+exit;
